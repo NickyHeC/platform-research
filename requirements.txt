@@ -1,0 +1,4 @@
+dedalus-labs
+dedalus-mcp
+python-dotenv
+httpx
