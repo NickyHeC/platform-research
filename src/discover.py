@@ -52,7 +52,12 @@ async def discover_from_page(
     """Extract links from a page using local defuddle-mcp."""
     from dedalus_mcp.client import MCPClient
 
-    client = await MCPClient.connect(DEFUDDLE_MCP_URL)
+    try:
+        client = await MCPClient.connect(DEFUDDLE_MCP_URL)
+    except Exception:
+        print("    Local defuddle unavailable, returning start URL only")
+        return [start_url]
+
     try:
         result = await client.call_tool("defuddle_url", {
             "url": start_url,

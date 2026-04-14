@@ -75,7 +75,12 @@ async def scrape_local(urls: list[str], concurrency: int = 5) -> dict[str, str |
     from dedalus_mcp.client import MCPClient
 
     print(f"\n  Pass 1: Local defuddle ({len(urls)} pages, concurrency={concurrency})")
-    client = await MCPClient.connect(DEFUDDLE_MCP_URL)
+    try:
+        client = await MCPClient.connect(DEFUDDLE_MCP_URL)
+    except Exception as e:
+        print(f"    Skipping local pass (server unavailable: {e})")
+        return {url: None for url in urls}
+
     sem = asyncio.Semaphore(concurrency)
 
     tasks = [_scrape_one_local(client, url, sem) for url in urls]
