@@ -1,0 +1,134 @@
+---
+description: Platform research and MCP server build workflow. Auto-triggers when user pastes a bare URL.
+alwaysApply: true
+---
+
+# Platform Research Workflow
+
+When the user pastes a bare URL (a message containing only a URL with no other instructions), treat it as a trigger to run the full platform research pipeline described below.
+
+---
+
+## Phase 0 — Pre-flight: check defuddle CLI version
+
+Before running the research pipeline, verify the locally installed defuddle CLI is up to date.
+
+```bash
+npm list -g defuddle 2>/dev/null | grep defuddle   # current local version
+npm view defuddle version                           # latest published version
+```
+
+If the local version is behind, run `npm install -g defuddle@latest` before proceeding.
+
+Reference repo: https://github.com/kepano/defuddle
+
+---
+
+## Phase 0.5 — URL validation: confirm the link points to API docs
+
+Before scraping, verify the URL actually points to the platform's **API / developer documentation** (REST endpoints, SDKs, authentication guides, etc.) rather than a marketing page, blog post, changelog, general product docs, or landing page.
+
+**How to check:**
+
+1. Fetch the page (or inspect the URL path) and look for signals like `/api`, `/docs`, `/developers`, `/reference`, endpoint descriptions, auth instructions, or OpenAPI/Swagger links.
+2. If the URL is **not** API docs (e.g. it's a product homepage like `https://posthog.com` or a generic docs landing page like `https://posthog.com/docs`), search for the correct API docs link:
+   - Check common paths: `<domain>/docs/api`, `<domain>/api`, `<domain>/developers`, `<domain>/developer/api`
+   - Check for `llms.txt` at the domain root — it often lists an API docs section
+   - Web-search `"<platform name> API documentation"` if the above fails
+3. Once found, use the **API docs URL** for the rest of the pipeline.
+4. If no API docs exist for the platform, stop and tell the user.
+
+**Prefix selection:**
+
+When running the research pipeline, always pass `--prefix` scoped to the API docs section (e.g. `--prefix /docs/api`) rather than a broad prefix like `--prefix /docs`. Platforms often have thousands of non-API doc pages; scraping all of them wastes time and money. If the API docs live at a dedicated subdomain or top-level path, the auto-detected prefix is usually fine.
+
+---
+
+## Phase 1 — Research: scrape docs and generate PROJECT.md
+
+Run the research pipeline from this project (`Agents/Prod/platform-research`):
+
+```bash
+python -m src.research <URL> --prefix <api-docs-path-prefix>
+```
+
+This discovers doc pages, scrapes them via defuddle, and generates a `PROJECT.md`.
+
+### Determine the target MCP folder
+
+Derive the platform name from the URL (e.g. `https://developers.notion.com/docs` → `notion`). The deposit folder is:
+
+```
+~/MCP Servers/Dev/<platform>-mcp
+```
+
+- If the folder **does not exist**, create it.
+- Copy the generated `PROJECT.md` into that folder.
+- Copy the scraped `docs/` directory into that folder as well so the agent has raw reference material.
+
+### Deposit the scraped output
+
+After the research pipeline finishes:
+
+1. Move or copy `PROJECT.md` → `~/MCP Servers/Dev/<platform>-mcp/PROJECT.md`
+2. Move or copy the `docs/` output dir → `~/MCP Servers/Dev/<platform>-mcp/docs/`
+3. Clean up the local `docs/` and `PROJECT.md` from `Agents/Prod/platform-research` so the workspace stays tidy.
+
+---
+
+## Phase 2 — Build the MCP server
+
+Build the MCP server using the **Dedalus Labs framework** according to `PROJECT.md` inside the `<platform>-mcp` folder.
+
+### If the folder was just created (empty except for PROJECT.md/docs)
+
+Use the local template as a starting point:
+
+```
+~/MCP Servers/Prod/mcp-template
+```
+
+Read the `README.md` in `mcp-template` to understand the template structure — it contains three auth variants (`src-no-auth/`, `src-api-key/`, `src-oauth/`). Choose the correct variant based on what `PROJECT.md` says about the platform's authentication method, rename it to `src/`, and remove the others.
+
+### If the folder already has existing files
+
+It was previously scaffolded from the template. Read the `README.md` inside the `<platform>-mcp` folder and cross-reference with `~/MCP Servers/Prod/mcp-template` to understand the project structure before making changes.
+
+### Reference implementation
+
+For an example of a standard, fully built MCP server, refer to:
+
+```
+~/MCP Servers/Prod/linear-mcp
+```
+
+### Environment setup
+
+Create a `.env` file in the `<platform>-mcp` folder. Grab the `DEDALUS_API_KEY` value from:
+
+```
+~/Agents/Prod/platform-research/.env
+```
+
+Populate the rest of the env vars based on `PROJECT.md` (auth tokens, OAuth config, base URLs, etc.).
+
+### README
+
+Update the `README.md` in `<platform>-mcp` with:
+
+- What the server does
+- Available tools and parameters
+- Configuration and environment variables
+- Usage examples
+
+Use the "Notes for README" section from `PROJECT.md` as a starting point.
+
+### Final cleanup
+
+After the server is built, clean up the `<platform>-mcp` project folder:
+
+- Remove leftover template scaffolding (`cli/`, `package.json`, `tsconfig.json`, remaining `src-*` folders)
+- Remove example/placeholder tools from `src/tools.py`
+- Update `pyproject.toml` with the correct project name and description
+- **Keep `PROJECT.md`** — it stays as permanent reference
+- Remove `docs/` directory (the scraped docs are no longer needed once the server is built)
